@@ -2,7 +2,6 @@ import streamlit as st
 import joblib
 import pandas as pd
 import os
-import requests
 import sqlite3
 from pathlib import Path
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -15,64 +14,24 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ====================== MODEL & SYMPTOMS DOWNLOAD ======================
-MODEL_DIR = "model"
-os.makedirs(MODEL_DIR, exist_ok=True)
+# ====================== LOAD MODEL & SYMPTOMS (Direct from GitHub) ======================
+MODEL_PATH = "model/disease_model.pkl"
+SYMPTOMS_PATH = "model/symptoms_list.pkl"
 
-MODEL_PATH = os.path.join(MODEL_DIR, "disease_model.pkl")
-SYMPTOMS_PATH = os.path.join(MODEL_DIR, "symptoms_list.pkl")
-
-# === UPDATE THESE WITH YOUR LATEST GOOGLE DRIVE FILE IDs ===
-MODEL_ID = "1WECkdGVprzRYsomgumMZuXBh-f3OWCPb"      # ← disease_model.pkl ID
-SYMPTOMS_ID = "1HqOB7G1AUDvqA80d6OFSOB4YySQ_VlgA"   # ← symptoms_list.pkl ID
-
-@st.cache_resource(show_spinner="Downloading and loading model...")
+@st.cache_resource(show_spinner="Loading AI Model...")
 def load_model_and_symptoms():
-    def download_file(file_id, save_path, description):
-        if os.path.exists(save_path):
-            return
-        st.info(f"Downloading {description}... (30-90 seconds)")
-        url = f"https://drive.google.com/uc?export=download&id={file_id}"
-        
-        session = requests.Session()
-        response = session.get(url, stream=True)
-        
-        if "confirm=" in response.text:
-            confirm_token = response.text.split("confirm=")[1].split("&")[0]
-            url = f"https://drive.google.com/uc?export=download&id={file_id}&confirm={confirm_token}"
-            response = session.get(url, stream=True)
-        
-        with open(save_path, "wb") as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
-        st.success(f"✅ {description} downloaded!")
-
-    # Download both
-    download_file(MODEL_ID, MODEL_PATH, "disease_model.pkl")
-    download_file(SYMPTOMS_ID, SYMPTOMS_PATH, "symptoms_list.pkl")
-
-    # Load with strict check
     try:
         model = joblib.load(MODEL_PATH)
         symptoms_list = joblib.load(SYMPTOMS_PATH)
+        
+        st.success("✅ AI Model loaded successfully!")
+        st.info(f"Model type: {type(model)} | Symptoms: {len(symptoms_list)}")
+        
+        return model, symptoms_list
     except Exception as e:
-        st.error(f"Error loading pkl files: {e}")
+        st.error(f"❌ Error loading model: {e}")
+        st.error("Make sure disease_model.pkl and symptoms_list.pkl are in the 'model/' folder.")
         st.stop()
-
-    # Critical safety check
-    st.info(f"🔍 Loaded model type: {type(model)}")
-    st.info(f"🔍 Symptoms list length: {len(symptoms_list) if isinstance(symptoms_list, list) else 'Not a list'}")
-
-    if not hasattr(model, 'predict'):
-        st.error("❌ **Wrong file loaded as model!**")
-        st.error("Please make sure:")
-        st.error("1. `disease_model.pkl` contains the trained RandomForest model")
-        st.error("2. `symptoms_list.pkl` contains the list of symptom names")
-        st.error("3. Re-upload the correct files to Google Drive and update the IDs.")
-        st.stop()
-
-    return model, symptoms_list
 
 model, symptoms_list = load_model_and_symptoms()
 
@@ -82,32 +41,24 @@ def load_data():
     base_dir = Path(__file__).parent.absolute()
     data_dir = base_dir / "data"
     
-    required_files = ["descriptions.csv", "medications.csv", "precautions.csv", "diets.csv", "workouts.csv"]
+    required = ["descriptions.csv", "medications.csv", "precautions.csv", "diets.csv", "workouts.csv"]
+    missing = [f for f in required if not (data_dir / f).exists()]
     
-    if not data_dir.exists():
-        st.error("❌ 'data' folder not found!")
-        st.stop()
-    
-    missing = [f for f in required_files if not (data_dir / f).exists()]
     if missing:
-        st.error(f"❌ Missing files: {', '.join(missing)}")
+        st.error(f"Missing data files: {missing}")
         st.stop()
     
-    try:
-        return (
-            pd.read_csv(data_dir / "descriptions.csv"),
-            pd.read_csv(data_dir / "medications.csv"),
-            pd.read_csv(data_dir / "precautions.csv"),
-            pd.read_csv(data_dir / "diets.csv"),
-            pd.read_csv(data_dir / "workouts.csv")
-        )
-    except Exception as e:
-        st.error(f"Error reading data: {e}")
-        st.stop()
+    return (
+        pd.read_csv(data_dir / "descriptions.csv"),
+        pd.read_csv(data_dir / "medications.csv"),
+        pd.read_csv(data_dir / "precautions.csv"),
+        pd.read_csv(data_dir / "diets.csv"),
+        pd.read_csv(data_dir / "workouts.csv")
+    )
 
 descriptions, medications, precautions, diets, workouts = load_data()
 
-# ====================== DATABASE (unchanged) ======================
+# ====================== DATABASE ======================
 def init_db():
     conn = sqlite3.connect('users.db')
     conn.execute('''CREATE TABLE IF NOT EXISTS users
@@ -205,15 +156,14 @@ else:
                 
                 info = {
                     "disease": prediction,
-                    "description": descriptions[descriptions["diseases"] == prediction]["description"].values[0] if not descriptions.empty else "No description available",
-                    "medications": medications[medications["diseases"] == prediction]["medications"].values[0] if not medications.empty else "No medications listed",
-                    "precautions": precautions[precautions["diseases"] == prediction]["precautions"].values[0] if not precautions.empty else "No precautions listed",
-                    "diets": diets[diets["diseases"] == prediction]["diets"].values[0] if not diets.empty else "No diet information",
-                    "workouts": workouts[workouts["diseases"] == prediction]["workouts"].values[0] if not workouts.empty else "No workouts listed"
+                    "description": descriptions[descriptions["diseases"] == prediction]["description"].values[0] if not descriptions.empty else "N/A",
+                    "medications": medications[medications["diseases"] == prediction]["medications"].values[0] if not medications.empty else "N/A",
+                    "precautions": precautions[precautions["diseases"] == prediction]["precautions"].values[0] if not precautions.empty else "N/A",
+                    "diets": diets[diets["diseases"] == prediction]["diets"].values[0] if not diets.empty else "N/A",
+                    "workouts": workouts[workouts["diseases"] == prediction]["workouts"].values[0] if not workouts.empty else "N/A"
                 }
                 
                 st.success(f"**Predicted Disease: {info['disease']}**")
-                
                 st.subheader("📋 Description")
                 st.write(info["description"])
                 st.subheader("💊 Recommended Medications")
