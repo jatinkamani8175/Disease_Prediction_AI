@@ -23,7 +23,7 @@ MODEL_PATH = os.path.join(MODEL_DIR, "disease_model.pkl")
 SYMPTOMS_PATH = os.path.join(MODEL_DIR, "symptoms_list.pkl")
 
 # === REPLACE THESE WITH YOUR ACTUAL GOOGLE DRIVE FILE IDs ===
-MODEL_ID = "1i18hJfpWk4BXdbwNUYIIsGPG-ohfvqUx"        # ← Change this
+MODEL_ID = "1CSKdZ4kdfilBFAGSqx22_SYzmUE9HzR1"        # ← Change this
 SYMPTOMS_ID = "1i18hJfpWk4BXdbwNUYIIsGPG-ohfvqUx"    # ← Change this
 
 @st.cache_resource(show_spinner="Downloading & loading model (first time only)...")
