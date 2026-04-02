@@ -1,6 +1,6 @@
-streamlit
+flask==3.0.3
 pandas
 scikit-learn
 joblib
-requests
 werkzeug
+requests
