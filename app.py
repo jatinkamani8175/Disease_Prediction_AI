@@ -7,15 +7,15 @@ import sqlite3
 from pathlib import Path
 from werkzeug.security import generate_password_hash, check_password_hash
 
-# ====================== Page Config (Professional Look) ======================
+# ====================== Page Config ======================
 st.set_page_config(
-    page_title="Disease_Detection - AI Health Assistant",
+    page_title="DiseaseGuard - AI Health Assistant",
     page_icon="🩺",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# ====================== MODEL AUTO DOWNLOAD ======================
+# ====================== MODEL & SYMPTOMS DOWNLOAD ======================
 MODEL_DIR = "model"
 os.makedirs(MODEL_DIR, exist_ok=True)
 
@@ -23,15 +23,15 @@ MODEL_PATH = os.path.join(MODEL_DIR, "disease_model.pkl")
 SYMPTOMS_PATH = os.path.join(MODEL_DIR, "symptoms_list.pkl")
 
 # === REPLACE THESE WITH YOUR ACTUAL GOOGLE DRIVE FILE IDs ===
-MODEL_ID = "1i18hJfpWk4BXdbwNUYIIsGPG-ohfvqUx"      # ← Change this
-SYMPTOMS_ID = "1i18hJfpWk4BXdbwNUYIIsGPG-ohfvqUx"  # ← Change this
+MODEL_ID = "1i18hJfpWk4BXdbwNUYIIsGPG-ohfvqUx"        # ← Change this
+SYMPTOMS_ID = "1i18hJfpWk4BXdbwNUYIIsGPG-ohfvqUx"    # ← Change this
 
-@st.cache_resource(show_spinner="Downloading model from Google Drive (first time only)...")
-def load_model():
+@st.cache_resource(show_spinner="Downloading & loading model (first time only)...")
+def load_model_and_symptoms():
     def download_file(file_id, save_path):
         if os.path.exists(save_path):
             return
-        st.info(f"Downloading {os.path.basename(save_path)}... This may take 30-90 seconds.")
+        st.info(f"Downloading {os.path.basename(save_path)}... (30-90 seconds)")
         url = f"https://drive.google.com/uc?export=download&id={file_id}"
         
         session = requests.Session()
@@ -47,17 +47,24 @@ def load_model():
                 if chunk:
                     f.write(chunk)
         st.success(f"✅ {os.path.basename(save_path)} downloaded!")
-    
+
     download_file(MODEL_ID, MODEL_PATH)
     download_file(SYMPTOMS_ID, SYMPTOMS_PATH)
-    
+
+    # Load separately with clear names
     model = joblib.load(MODEL_PATH)
-    symptoms = joblib.load(SYMPTOMS_PATH)
-    return model, symptoms
+    symptoms_list = joblib.load(SYMPTOMS_PATH)
+    
+    # Safety check: model must have .predict method
+    if not hasattr(model, 'predict'):
+        st.error("❌ Loaded model is invalid. Please re-upload the correct disease_model.pkl to Google Drive.")
+        st.stop()
+    
+    return model, symptoms_list
 
-model, symptoms_list = load_model()
+model, symptoms_list = load_model_and_symptoms()
 
-# ====================== LOAD DATA (Improved & More Robust) ======================
+# ====================== LOAD DATA ======================
 @st.cache_data
 def load_data():
     base_dir = Path(__file__).parent.absolute()
@@ -65,37 +72,31 @@ def load_data():
     
     required_files = ["descriptions.csv", "medications.csv", "precautions.csv", "diets.csv", "workouts.csv"]
     
-    # Check if data folder and all files exist
     if not data_dir.exists():
-        st.error("❌ **'data' folder not found!**")
-        st.error("Please create a folder named **data** in your GitHub repo and add all CSV files inside it.")
+        st.error("❌ 'data' folder not found in your GitHub repository!")
         st.stop()
     
-    missing = []
-    for file in required_files:
-        if not (data_dir / file).exists():
-            missing.append(file)
-    
+    missing = [f for f in required_files if not (data_dir / f).exists()]
     if missing:
-        st.error("❌ **Some data files are missing!**")
-        st.error(f"Missing files: {', '.join(missing)}")
-        st.error("Make sure all 5 CSV files are inside the **data/** folder on GitHub.")
+        st.error(f"❌ Missing files: {', '.join(missing)}")
+        st.error("Make sure all 5 CSV files are inside the **data/** folder.")
         st.stop()
     
     try:
-        descriptions = pd.read_csv(data_dir / "descriptions.csv")
-        medications   = pd.read_csv(data_dir / "medications.csv")
-        precautions   = pd.read_csv(data_dir / "precautions.csv")
-        diets         = pd.read_csv(data_dir / "diets.csv")
-        workouts      = pd.read_csv(data_dir / "workouts.csv")
-        return descriptions, medications, precautions, diets, workouts
+        return (
+            pd.read_csv(data_dir / "descriptions.csv"),
+            pd.read_csv(data_dir / "medications.csv"),
+            pd.read_csv(data_dir / "precautions.csv"),
+            pd.read_csv(data_dir / "diets.csv"),
+            pd.read_csv(data_dir / "workouts.csv")
+        )
     except Exception as e:
-        st.error(f"❌ Error reading data files: {e}")
+        st.error(f"Error reading CSV files: {e}")
         st.stop()
 
 descriptions, medications, precautions, diets, workouts = load_data()
 
-# ====================== DATABASE SETUP ======================
+# ====================== DATABASE ======================
 def init_db():
     conn = sqlite3.connect('users.db')
     conn.execute('''CREATE TABLE IF NOT EXISTS users
@@ -131,7 +132,7 @@ if "logged_in" not in st.session_state:
 
 # ====================== SIDEBAR ======================
 st.sidebar.title("🩺 DiseaseGuard")
-st.sidebar.markdown("**AI-Powered Symptom to Disease Detector**")
+st.sidebar.markdown("**AI Symptom → Disease Detector**")
 
 if st.session_state.logged_in:
     st.sidebar.success(f"Logged in as: **{st.session_state.username}**")
@@ -140,11 +141,11 @@ if st.session_state.logged_in:
         st.session_state.username = ""
         st.rerun()
 else:
-    st.sidebar.info("Please login or register to continue")
+    st.sidebar.info("Please login or register")
 
 # ====================== MAIN APP ======================
 st.title("🩺 DiseaseGuard")
-st.markdown("**Professional AI Health Assistant** — Predict disease from symptoms and get full recommendations")
+st.markdown("**Professional AI Health Assistant**")
 
 if not st.session_state.logged_in:
     tab1, tab2 = st.tabs(["🔑 Login", "📝 Register"])
@@ -156,7 +157,7 @@ if not st.session_state.logged_in:
             if login_user(username, password):
                 st.session_state.logged_in = True
                 st.session_state.username = username
-                st.success("Login successful!")
+                st.success("✅ Login successful!")
                 st.rerun()
             else:
                 st.error("Invalid username or password")
@@ -166,9 +167,9 @@ if not st.session_state.logged_in:
         new_pass = st.text_input("Choose Password", type="password", key="reg_pass")
         if st.button("Register", type="primary"):
             if register_user(new_user, new_pass):
-                st.success("Account created successfully! Now login.")
+                st.success("Account created! Now login.")
             else:
-                st.error("Username already exists. Try another one.")
+                st.error("Username already exists.")
 
 else:
     st.subheader("Select Your Symptoms")
@@ -180,17 +181,21 @@ else:
         "Choose symptoms you are experiencing",
         options=filtered_symptoms,
         default=[],
-        help="Start typing to search"
+        help="You can select multiple symptoms"
     )
     
     if st.button("🔮 Predict Disease", type="primary", use_container_width=True):
         if not selected_symptoms:
-            st.warning("Please select at least one symptom")
+            st.warning("⚠️ Please select at least one symptom")
         else:
             with st.spinner("Analyzing symptoms..."):
+                # Create input vector (0/1 for each symptom)
                 input_vec = [1 if sym in selected_symptoms else 0 for sym in symptoms_list]
+                
+                # Predict
                 prediction = model.predict([input_vec])[0]
                 
+                # Get rich information
                 info = {
                     "disease": prediction,
                     "description": descriptions[descriptions["disease"] == prediction]["description"].values[0],
@@ -213,7 +218,7 @@ else:
                 st.subheader("🏋️ Suggested Workouts / Exercises")
                 st.write(info["workouts"])
                 
-                st.caption("⚠️ **Important**: This is for educational purposes only. Always consult a qualified doctor.")
+                st.caption("⚠️ This is for educational purposes only. Always consult a qualified doctor.")
 
 st.sidebar.markdown("---")
-st.sidebar.caption("Built with ❤️ using Streamlit + Scikit-learn\n\nEducational project only")
+st.sidebar.caption("Built with ❤️ using Streamlit + Scikit-learn\nEducational project only")
