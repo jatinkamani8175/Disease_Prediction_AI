@@ -8,7 +8,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 # ====================== Page Config (Professional Look) ======================
 st.set_page_config(
-    page_title="DiseaseGuard - AI Health Assistant",
+    page_title="Disease_Detection - AI Health Assistant",
     page_icon="🩺",
     layout="wide",
     initial_sidebar_state="expanded"
