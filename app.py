@@ -7,7 +7,7 @@ import sqlite3
 from pathlib import Path
 from werkzeug.security import generate_password_hash, check_password_hash
 
-# ====================== Page Config ======================
+# ====================== Page Config (Professional Look) ======================
 st.set_page_config(
     page_title="Disease_Detection - AI Health Assistant",
     page_icon="🩺",
@@ -57,11 +57,30 @@ def load_model():
 
 model, symptoms_list = load_model()
 
-# ====================== LOAD DATA (Fixed Path) ======================
+# ====================== LOAD DATA (Improved & More Robust) ======================
 @st.cache_data
 def load_data():
-    base_dir = Path(__file__).parent.absolute()   # Reliable path on Streamlit Cloud
+    base_dir = Path(__file__).parent.absolute()
     data_dir = base_dir / "data"
+    
+    required_files = ["descriptions.csv", "medications.csv", "precautions.csv", "diets.csv", "workouts.csv"]
+    
+    # Check if data folder and all files exist
+    if not data_dir.exists():
+        st.error("❌ **'data' folder not found!**")
+        st.error("Please create a folder named **data** in your GitHub repo and add all CSV files inside it.")
+        st.stop()
+    
+    missing = []
+    for file in required_files:
+        if not (data_dir / file).exists():
+            missing.append(file)
+    
+    if missing:
+        st.error("❌ **Some data files are missing!**")
+        st.error(f"Missing files: {', '.join(missing)}")
+        st.error("Make sure all 5 CSV files are inside the **data/** folder on GitHub.")
+        st.stop()
     
     try:
         descriptions = pd.read_csv(data_dir / "descriptions.csv")
@@ -70,10 +89,8 @@ def load_data():
         diets         = pd.read_csv(data_dir / "diets.csv")
         workouts      = pd.read_csv(data_dir / "workouts.csv")
         return descriptions, medications, precautions, diets, workouts
-    except FileNotFoundError as e:
-        st.error("❌ **Data folder not found!**")
-        st.error("Please make sure you have a folder named **data** in your GitHub repository containing all 5 CSV files:")
-        st.error("descriptions.csv, medications.csv, precautions.csv, diets.csv, workouts.csv")
+    except Exception as e:
+        st.error(f"❌ Error reading data files: {e}")
         st.stop()
 
 descriptions, medications, precautions, diets, workouts = load_data()
