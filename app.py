@@ -4,11 +4,12 @@ import pandas as pd
 import os
 import requests
 import sqlite3
+from pathlib import Path
 from werkzeug.security import generate_password_hash, check_password_hash
 
-# ====================== Page Config (Professional Look) ======================
+# ====================== Page Config ======================
 st.set_page_config(
-    page_title="DiseaseGuard - AI Health Assistant",
+    page_title="Disease_Detection - AI Health Assistant",
     page_icon="🩺",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -21,9 +22,9 @@ os.makedirs(MODEL_DIR, exist_ok=True)
 MODEL_PATH = os.path.join(MODEL_DIR, "disease_model.pkl")
 SYMPTOMS_PATH = os.path.join(MODEL_DIR, "symptoms_list.pkl")
 
-# === REPLACE THESE WITH YOUR GOOGLE DRIVE FILE IDs ===
-MODEL_ID = "1i18hJfpWk4BXdbwNUYIIsGPG-ohfvqUx"          # ← Change this
-SYMPTOMS_ID = "1i18hJfpWk4BXdbwNUYIIsGPG-ohfvqUx"    # ← Change this
+# === REPLACE THESE WITH YOUR ACTUAL GOOGLE DRIVE FILE IDs ===
+MODEL_ID = "1i18hJfpWk4BXdbwNUYIIsGPG-ohfvqUx"      # ← Change this
+SYMPTOMS_ID = "1i18hJfpWk4BXdbwNUYIIsGPG-ohfvqUx"  # ← Change this
 
 @st.cache_resource(show_spinner="Downloading model from Google Drive (first time only)...")
 def load_model():
@@ -36,7 +37,6 @@ def load_model():
         session = requests.Session()
         response = session.get(url, stream=True)
         
-        # Handle Google Drive large file confirmation
         if "confirm=" in response.text:
             confirm_token = response.text.split("confirm=")[1].split("&")[0]
             url = f"https://drive.google.com/uc?export=download&id={file_id}&confirm={confirm_token}"
@@ -47,33 +47,41 @@ def load_model():
                 if chunk:
                     f.write(chunk)
         st.success(f"✅ {os.path.basename(save_path)} downloaded!")
-
+    
     download_file(MODEL_ID, MODEL_PATH)
     download_file(SYMPTOMS_ID, SYMPTOMS_PATH)
-
+    
     model = joblib.load(MODEL_PATH)
     symptoms = joblib.load(SYMPTOMS_PATH)
     return model, symptoms
 
 model, symptoms_list = load_model()
 
-# ====================== LOAD DATA ======================
+# ====================== LOAD DATA (Fixed Path) ======================
 @st.cache_data
 def load_data():
-    return (
-        pd.read_csv("data/descriptions.csv"),
-        pd.read_csv("data/medications.csv"),
-        pd.read_csv("data/precautions.csv"),
-        pd.read_csv("data/diets.csv"),
-        pd.read_csv("data/workouts.csv")
-    )
+    base_dir = Path(__file__).parent.absolute()   # Reliable path on Streamlit Cloud
+    data_dir = base_dir / "data"
+    
+    try:
+        descriptions = pd.read_csv(data_dir / "descriptions.csv")
+        medications   = pd.read_csv(data_dir / "medications.csv")
+        precautions   = pd.read_csv(data_dir / "precautions.csv")
+        diets         = pd.read_csv(data_dir / "diets.csv")
+        workouts      = pd.read_csv(data_dir / "workouts.csv")
+        return descriptions, medications, precautions, diets, workouts
+    except FileNotFoundError as e:
+        st.error("❌ **Data folder not found!**")
+        st.error("Please make sure you have a folder named **data** in your GitHub repository containing all 5 CSV files:")
+        st.error("descriptions.csv, medications.csv, precautions.csv, diets.csv, workouts.csv")
+        st.stop()
 
 descriptions, medications, precautions, diets, workouts = load_data()
 
 # ====================== DATABASE SETUP ======================
 def init_db():
     conn = sqlite3.connect('users.db')
-    conn.execute('''CREATE TABLE IF NOT EXISTS users 
+    conn.execute('''CREATE TABLE IF NOT EXISTS users
                     (id INTEGER PRIMARY KEY, username TEXT UNIQUE, password TEXT)''')
     conn.close()
 
@@ -146,62 +154,49 @@ if not st.session_state.logged_in:
                 st.error("Username already exists. Try another one.")
 
 else:
-    # Logged-in user sees the prediction page
     st.subheader("Select Your Symptoms")
     
-    # Search box
     search = st.text_input("🔍 Search symptoms", "")
     filtered_symptoms = [s for s in symptoms_list if search.lower() in s.lower()]
     
-    # Multi-select (easier & cleaner than 200+ checkboxes)
     selected_symptoms = st.multiselect(
-        "Choose symptoms you are experiencing (you can select multiple)",
+        "Choose symptoms you are experiencing",
         options=filtered_symptoms,
         default=[],
         help="Start typing to search"
     )
     
-    col1, col2 = st.columns([1, 4])
-    with col1:
-        if st.button("🔮 Predict Disease", type="primary", use_container_width=True):
-            if not selected_symptoms:
-                st.warning("Please select at least one symptom")
-            else:
-                with st.spinner("Analyzing symptoms..."):
-                    # Create input vector
-                    input_vec = [1 if sym in selected_symptoms else 0 for sym in symptoms_list]
-                    prediction = model.predict([input_vec])[0]
+    if st.button("🔮 Predict Disease", type="primary", use_container_width=True):
+        if not selected_symptoms:
+            st.warning("Please select at least one symptom")
+        else:
+            with st.spinner("Analyzing symptoms..."):
+                input_vec = [1 if sym in selected_symptoms else 0 for sym in symptoms_list]
+                prediction = model.predict([input_vec])[0]
+                
+                info = {
+                    "disease": prediction,
+                    "description": descriptions[descriptions["disease"] == prediction]["description"].values[0],
+                    "medications": medications[medications["disease"] == prediction]["medications"].values[0],
+                    "precautions": precautions[precautions["disease"] == prediction]["precautions"].values[0],
+                    "diets": diets[diets["disease"] == prediction]["diets"].values[0],
+                    "workouts": workouts[workouts["disease"] == prediction]["workouts"].values[0]
+                }
+                
+                st.success(f"**Predicted Disease: {info['disease']}**")
+                
+                st.subheader("📋 Description")
+                st.write(info["description"])
+                st.subheader("💊 Recommended Medications")
+                st.write(info["medications"])
+                st.subheader("⚠️ Precautions")
+                st.write(info["precautions"])
+                st.subheader("🥗 Recommended Diet")
+                st.write(info["diets"])
+                st.subheader("🏋️ Suggested Workouts / Exercises")
+                st.write(info["workouts"])
+                
+                st.caption("⚠️ **Important**: This is for educational purposes only. Always consult a qualified doctor.")
 
-                    # Get full info
-                    info = {
-                        "disease": prediction,
-                        "description": descriptions[descriptions["disease"] == prediction]["description"].values[0],
-                        "medications": medications[medications["disease"] == prediction]["medications"].values[0],
-                        "precautions": precautions[precautions["disease"] == prediction]["precautions"].values[0],
-                        "diets": diets[diets["disease"] == prediction]["diets"].values[0],
-                        "workouts": workouts[workouts["disease"] == prediction]["workouts"].values[0]
-                    }
-
-                    # Display beautiful result
-                    st.success(f"**Predicted Disease: {info['disease']}**")
-                    
-                    st.subheader("📋 Description")
-                    st.write(info["description"])
-
-                    st.subheader("💊 Recommended Medications")
-                    st.write(info["medications"])
-
-                    st.subheader("⚠️ Precautions")
-                    st.write(info["precautions"])
-
-                    st.subheader("🥗 Recommended Diet")
-                    st.write(info["diets"])
-
-                    st.subheader("🏋️ Suggested Workouts / Exercises")
-                    st.write(info["workouts"])
-
-                    st.caption("⚠️ **Important**: This is for educational purposes only. Always consult a qualified doctor for medical advice.")
-
-# Footer
 st.sidebar.markdown("---")
-st.sidebar.caption("Built with ❤️ using Streamlit + Scikit-learn\n\nDisclaimer: Educational project only")
+st.sidebar.caption("Built with ❤️ using Streamlit + Scikit-learn\n\nEducational project only")
