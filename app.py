@@ -137,13 +137,26 @@ else:
         else:
             with st.spinner("Analyzing symptoms..."):
                 input_vec = [1 if sym in selected_symptoms else 0 for sym in symptoms_list]
-                prediction = model.predict([input_vec])[0]
                 
-                # Safe way to get information (handles both 'disease' and 'diseases' column)
+                # Get prediction and probabilities
+                prediction = model.predict([input_vec])[0]
+                proba = model.predict_proba([input_vec])[0]
+                confidence = max(proba) * 100
+                top_prob = sorted(zip(model.classes_, proba), key=lambda x: x[1], reverse=True)[:3]
+                
+                # Debug info (you can remove later)
+                st.info(f"Top 3 predictions: {top_prob[0][0]} ({top_prob[0][1]*100:.1f}%), "
+                        f"{top_prob[1][0]} ({top_prob[1][1]*100:.1f}%), "
+                        f"{top_prob[2][0]} ({top_prob[2][1]*100:.1f}%)")
+                
+                # If confidence is very low, show warning
+                if confidence < 35:
+                    st.warning("⚠️ Low confidence prediction. The model is not sure. Try selecting more specific symptoms.")
+                
+                # Safe info retrieval function
                 def get_info(df, col_name, default="Information not available"):
                     if df.empty:
                         return default
-                    # Try both possible column names
                     for possible_col in ['disease', 'diseases', 'Disease']:
                         if possible_col in df.columns:
                             match = df[df[possible_col] == prediction]
@@ -160,7 +173,7 @@ else:
                     "workouts": get_info(workouts, "workouts")
                 }
                 
-                st.success(f"**Predicted Disease: {info['disease']}**")
+                st.success(f"**Predicted Disease: {info['disease']}** (Confidence: {confidence:.1f}%)")
                 
                 st.subheader("📋 Description")
                 st.write(info["description"])
