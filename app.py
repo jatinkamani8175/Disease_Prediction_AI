@@ -14,24 +14,16 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ====================== LOAD MODEL & SYMPTOMS (Direct from GitHub) ======================
+# ====================== LOAD MODEL & SYMPTOMS ======================
 MODEL_PATH = "model/disease_model.pkl"
 SYMPTOMS_PATH = "model/symptoms_list.pkl"
 
 @st.cache_resource(show_spinner="Loading AI Model...")
 def load_model_and_symptoms():
-    try:
-        model = joblib.load(MODEL_PATH)
-        symptoms_list = joblib.load(SYMPTOMS_PATH)
-        
-        st.success("✅ AI Model loaded successfully!")
-        st.info(f"Model type: {type(model)} | Symptoms: {len(symptoms_list)}")
-        
-        return model, symptoms_list
-    except Exception as e:
-        st.error(f"❌ Error loading model: {e}")
-        st.error("Make sure disease_model.pkl and symptoms_list.pkl are in the 'model/' folder.")
-        st.stop()
+    model = joblib.load(MODEL_PATH)
+    symptoms_list = joblib.load(SYMPTOMS_PATH)
+    st.success("✅ AI Model loaded successfully!")
+    return model, symptoms_list
 
 model, symptoms_list = load_model_and_symptoms()
 
@@ -40,13 +32,6 @@ model, symptoms_list = load_model_and_symptoms()
 def load_data():
     base_dir = Path(__file__).parent.absolute()
     data_dir = base_dir / "data"
-    
-    required = ["descriptions.csv", "medications.csv", "precautions.csv", "diets.csv", "workouts.csv"]
-    missing = [f for f in required if not (data_dir / f).exists()]
-    
-    if missing:
-        st.error(f"Missing data files: {missing}")
-        st.stop()
     
     return (
         pd.read_csv(data_dir / "descriptions.csv"),
@@ -154,16 +139,29 @@ else:
                 input_vec = [1 if sym in selected_symptoms else 0 for sym in symptoms_list]
                 prediction = model.predict([input_vec])[0]
                 
+                # Safe way to get information (handles both 'disease' and 'diseases' column)
+                def get_info(df, col_name, default="Information not available"):
+                    if df.empty:
+                        return default
+                    # Try both possible column names
+                    for possible_col in ['disease', 'diseases', 'Disease']:
+                        if possible_col in df.columns:
+                            match = df[df[possible_col] == prediction]
+                            if not match.empty:
+                                return match[col_name].values[0]
+                    return default
+                
                 info = {
                     "disease": prediction,
-                    "description": descriptions[descriptions["diseases"] == prediction]["description"].values[0] if not descriptions.empty else "N/A",
-                    "medications": medications[medications["diseases"] == prediction]["medications"].values[0] if not medications.empty else "N/A",
-                    "precautions": precautions[precautions["diseases"] == prediction]["precautions"].values[0] if not precautions.empty else "N/A",
-                    "diets": diets[diets["diseases"] == prediction]["diets"].values[0] if not diets.empty else "N/A",
-                    "workouts": workouts[workouts["diseases"] == prediction]["workouts"].values[0] if not workouts.empty else "N/A"
+                    "description": get_info(descriptions, "description"),
+                    "medications": get_info(medications, "medications"),
+                    "precautions": get_info(precautions, "precautions"),
+                    "diets": get_info(diets, "diets"),
+                    "workouts": get_info(workouts, "workouts")
                 }
                 
                 st.success(f"**Predicted Disease: {info['disease']}**")
+                
                 st.subheader("📋 Description")
                 st.write(info["description"])
                 st.subheader("💊 Recommended Medications")
