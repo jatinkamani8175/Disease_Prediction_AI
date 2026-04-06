@@ -30,7 +30,7 @@ model, symptoms_list = load_model_and_symptoms()
 # ====================== LOAD DATA ======================
 @st.cache_data
 def load_data():
-    base_dir = Path(__file__).parent.absolute()
+    base_dir = Path(data).parent.absolute()
     data_dir = base_dir / "data"
     
     return (
