@@ -1,7 +1,6 @@
 import streamlit as st
 import joblib
 import pandas as pd
-import os
 import sqlite3
 from pathlib import Path
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -10,36 +9,45 @@ from werkzeug.security import generate_password_hash, check_password_hash
 st.set_page_config(
     page_title="DiseaseGuard - AI Health Assistant",
     page_icon="🩺",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
-# ====================== LOAD MODEL & SYMPTOMS ======================
+# ====================== LOAD MODEL ======================
 MODEL_PATH = "model/disease_model.pkl"
 SYMPTOMS_PATH = "model/symptoms_list.pkl"
 
 @st.cache_resource(show_spinner="Loading AI Model...")
-def load_model_and_symptoms():
+def load_model():
     model = joblib.load(MODEL_PATH)
-    symptoms_list = joblib.load(SYMPTOMS_PATH)
-    st.success("✅ AI Model loaded successfully!")
-    return model, symptoms_list
+    symptoms = joblib.load(SYMPTOMS_PATH)
+    return model, symptoms
 
-model, symptoms_list = load_model_and_symptoms()
+model, symptoms_list = load_model()
 
 # ====================== LOAD DATA ======================
 @st.cache_data
 def load_data():
-    base_dir = Path(data).parent.absolute()
+    base_dir = Path(__file__).parent  # ✅ FIXED
     data_dir = base_dir / "data"
-    
-    return (
-        pd.read_csv(data_dir / "descriptions.csv"),
-        pd.read_csv(data_dir / "medications.csv"),
-        pd.read_csv(data_dir / "precautions.csv"),
-        pd.read_csv(data_dir / "diets.csv"),
-        pd.read_csv(data_dir / "workouts.csv")
-    )
+
+    try:
+        descriptions = pd.read_csv(data_dir / "descriptions.csv")
+        medications = pd.read_csv(data_dir / "medications.csv")
+        precautions = pd.read_csv(data_dir / "precautions.csv")
+        diets = pd.read_csv(data_dir / "diets.csv")
+        workouts = pd.read_csv(data_dir / "workouts.csv")
+
+        # Normalize columns
+        for df in [descriptions, medications, precautions, diets, workouts]:
+            df.columns = df.columns.str.strip().str.lower()
+            if "disease" in df.columns:
+                df["disease"] = df["disease"].astype(str).str.strip().str.lower()
+
+        return descriptions, medications, precautions, diets, workouts
+
+    except Exception as e:
+        st.error(f"Error loading data: {e}")
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
 descriptions, medications, precautions, diets, workouts = load_data()
 
@@ -72,121 +80,114 @@ def login_user(username, password):
         return True
     return False
 
-# ====================== SESSION STATE ======================
+# ====================== SESSION ======================
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.username = ""
 
 # ====================== SIDEBAR ======================
 st.sidebar.title("🩺 DiseaseGuard")
-st.sidebar.markdown("**AI Symptom → Disease Detector**")
 
 if st.session_state.logged_in:
-    st.sidebar.success(f"Logged in as: **{st.session_state.username}**")
+    st.sidebar.success(f"Logged in as {st.session_state.username}")
     if st.sidebar.button("Logout"):
         st.session_state.logged_in = False
-        st.session_state.username = ""
         st.rerun()
 else:
-    st.sidebar.info("Please login or register")
+    st.sidebar.info("Login required")
 
-# ====================== MAIN APP ======================
-st.title("🩺 DiseaseGuard")
-st.markdown("**Professional AI Health Assistant**")
+# ====================== HELPER FUNCTION ======================
+def get_info(df, disease, col_name):
+    try:
+        disease = disease.strip().lower()
+
+        if df.empty or "disease" not in df.columns:
+            return "Information not available"
+
+        match = df[df["disease"] == disease]
+
+        if not match.empty and col_name in df.columns:
+            return match.iloc[0][col_name]
+
+    except Exception as e:
+        st.error(f"Error fetching info: {e}")
+
+    return "Information not available"
+
+# ====================== MAIN ======================
+st.title("🩺 DiseaseGuard AI")
 
 if not st.session_state.logged_in:
-    tab1, tab2 = st.tabs(["🔑 Login", "📝 Register"])
-    
+
+    tab1, tab2 = st.tabs(["Login", "Register"])
+
     with tab1:
-        username = st.text_input("Username", key="login_user")
-        password = st.text_input("Password", type="password", key="login_pass")
-        if st.button("Login", type="primary"):
-            if login_user(username, password):
+        u = st.text_input("Username")
+        p = st.text_input("Password", type="password")
+
+        if st.button("Login"):
+            if login_user(u, p):
                 st.session_state.logged_in = True
-                st.session_state.username = username
-                st.success("✅ Login successful!")
+                st.session_state.username = u
                 st.rerun()
             else:
-                st.error("Invalid username or password")
-    
+                st.error("Invalid login")
+
     with tab2:
-        new_user = st.text_input("Choose Username", key="reg_user")
-        new_pass = st.text_input("Choose Password", type="password", key="reg_pass")
-        if st.button("Register", type="primary"):
-            if register_user(new_user, new_pass):
-                st.success("Account created! Now login.")
+        u = st.text_input("New Username")
+        p = st.text_input("New Password", type="password")
+
+        if st.button("Register"):
+            if register_user(u, p):
+                st.success("Registered successfully")
             else:
-                st.error("Username already exists.")
+                st.error("Username exists")
 
+# ====================== AFTER LOGIN ======================
 else:
-    st.subheader("Select Your Symptoms")
-    
-    search = st.text_input("🔍 Search symptoms", "")
-    filtered_symptoms = [s for s in symptoms_list if search.lower() in s.lower()]
-    
-    selected_symptoms = st.multiselect(
-        "Choose symptoms you are experiencing",
-        options=filtered_symptoms,
-        default=[],
-        help="You can select multiple symptoms"
-    )
-    
-    if st.button("🔮 Predict Disease", type="primary", use_container_width=True):
-        if not selected_symptoms:
-            st.warning("⚠️ Please select at least one symptom")
-        else:
-            with st.spinner("Analyzing symptoms..."):
-                input_vec = [1 if sym in selected_symptoms else 0 for sym in symptoms_list]
-                
-                # Get prediction and probabilities
-                prediction = model.predict([input_vec])[0]
-                proba = model.predict_proba([input_vec])[0]
-                confidence = max(proba) * 100
-                top_prob = sorted(zip(model.classes_, proba), key=lambda x: x[1], reverse=True)[:3]
-                
-                # Debug info (you can remove later)
-                st.info(f"Top 3 predictions: {top_prob[0][0]} ({top_prob[0][1]*100:.1f}%), "
-                        f"{top_prob[1][0]} ({top_prob[1][1]*100:.1f}%), "
-                        f"{top_prob[2][0]} ({top_prob[2][1]*100:.1f}%)")
-                
-                # If confidence is very low, show warning
-                if confidence < 35:
-                    st.warning("⚠️ Low confidence prediction. The model is not sure. Try selecting more specific symptoms.")
-                
-                # Safe info retrieval function
-                def get_info(df, col_name, default="Information not available"):
-                    if df.empty:
-                        return default
-                    for possible_col in ['disease', 'diseases', 'Disease']:
-                        if possible_col in df.columns:
-                            match = df[df[possible_col] == prediction]
-                            if not match.empty:
-                                return match[col_name].values[0]
-                    return default
-                
-                info = {
-                    "disease": prediction,
-                    "description": get_info(descriptions, "description"),
-                    "medications": get_info(medications, "medications"),
-                    "precautions": get_info(precautions, "precautions"),
-                    "diets": get_info(diets, "diets"),
-                    "workouts": get_info(workouts, "workouts")
-                }
-                
-                st.success(f"**Predicted Disease: {info['disease']}** (Confidence: {confidence:.1f}%)")
-                
-                st.subheader("📋 Description")
-                st.write(info["description"])
-                st.subheader("💊 Recommended Medications")
-                st.write(info["medications"])
-                st.subheader("⚠️ Precautions")
-                st.write(info["precautions"])
-                st.subheader("🥗 Recommended Diet")
-                st.write(info["diets"])
-                st.subheader("🏋️ Suggested Workouts / Exercises")
-                st.write(info["workouts"])
-                
-                st.caption("⚠️ This is for educational purposes only. Always consult a qualified doctor.")
+    st.subheader("Select Symptoms")
 
-st.sidebar.markdown("---")
-st.sidebar.caption("Built with ❤️ using Streamlit + Scikit-learn\nEducational project only")
+    search = st.text_input("Search symptoms")
+    filtered = [s for s in symptoms_list if search.lower() in s.lower()]
+
+    selected = st.multiselect("Symptoms", filtered)
+
+    if st.button("Predict Disease"):
+
+        if not selected:
+            st.warning("Select symptoms")
+        else:
+            input_vec = [1 if s in selected else 0 for s in symptoms_list]
+
+            prediction = model.predict([input_vec])[0]
+            proba = model.predict_proba([input_vec])[0]
+            confidence = max(proba) * 100
+
+            st.success(f"Prediction: {prediction} ({confidence:.2f}%)")
+
+            # DEBUG (remove later)
+            st.write("Prediction raw:", prediction)
+
+            # Fetch info
+            desc = get_info(descriptions, prediction, "description")
+            meds = get_info(medications, prediction, "medications")
+            prec = get_info(precautions, prediction, "precautions")
+            diet = get_info(diets, prediction, "diets")
+            work = get_info(workouts, prediction, "workouts")
+
+            st.subheader("📋 Description")
+            st.write(desc)
+
+            st.subheader("💊 Medications")
+            st.write(meds)
+
+            st.subheader("⚠️ Precautions")
+            st.write(prec)
+
+            st.subheader("🥗 Diet")
+            st.write(diet)
+
+            st.subheader("🏋️ Workouts")
+            st.write(work)
+
+            st.caption("Educational purpose only")
