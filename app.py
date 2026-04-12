@@ -14,18 +14,16 @@ st.set_page_config(
 
 # ====================== LOAD MODEL ======================
 MODEL_PATH = "model/disease_model.pkl"
-SYMPTOMS_PATH = "model/symptoms_list.pkl"
 
 @st.cache_resource(show_spinner="Loading AI Model...")
-def load_model_and_symptoms():
-    model = joblib.load(MODEL_PATH)
-    symptoms_list = joblib.load(SYMPTOMS_PATH)
-    st.success("✅ Model loaded successfully!")
-    return model, symptoms_list
+def load_model():
+    pipeline = joblib.load(MODEL_PATH)
+    st.success("✅ AI Model loaded successfully!")
+    return pipeline
 
-model, symptoms_list = load_model_and_symptoms()
+pipeline = load_model()
 
-# ====================== LOAD DATA ======================
+# ====================== LOAD EXTRA DATA ======================
 @st.cache_data
 def load_data():
     base_dir = Path(__file__).parent.absolute()
@@ -117,47 +115,39 @@ if not st.session_state.logged_in:
 else:
     st.subheader("Select Your Symptoms")
     
-    search = st.text_input("🔍 Search symptoms", "")
-    filtered_symptoms = [s for s in symptoms_list if search.lower() in s.lower()]
-    
-    selected_symptoms = st.multiselect(
-        "Choose symptoms you are experiencing",
-        options=filtered_symptoms,
-        default=[],
-        help="Select multiple symptoms for better accuracy"
+    # Text input for symptoms (since your model uses text)
+    user_symptoms = st.text_area(
+        "Describe your symptoms (comma separated or in sentence)",
+        placeholder="e.g. shortness of breath, chest tightness, palpitations, anxiety",
+        height=100
     )
     
     if st.button("🔮 Predict Disease", type="primary", use_container_width=True):
-        if not selected_symptoms:
-            st.warning("Please select at least one symptom")
+        if not user_symptoms.strip():
+            st.warning("Please enter your symptoms")
         else:
             with st.spinner("Analyzing symptoms..."):
-                input_vec = [1 if sym in selected_symptoms else 0 for sym in symptoms_list]
+                # Predict using the pipeline
+                prediction = pipeline.predict([user_symptoms])[0]
                 
-                # Get the numeric prediction
-                pred_index = model.predict([input_vec])[0]
-                
-                # CRITICAL FIX: Convert number to actual disease name
-                disease_name = model.classes_[pred_index]
-                
-                # Top 3 predictions
-                proba = model.predict_proba([input_vec])[0]
-                top3 = sorted(zip(model.classes_, proba), key=lambda x: x[1], reverse=True)[:3]
+                # Get probabilities for top 3
+                proba = pipeline.predict_proba([user_symptoms])[0]
+                top3 = sorted(zip(pipeline.classes_, proba), key=lambda x: x[1], reverse=True)[:3]
                 
                 st.info(f"**Top 3 Predictions:** {top3[0][0]} ({top3[0][1]*100:.1f}%), "
                         f"{top3[1][0]} ({top3[1][1]*100:.1f}%), {top3[2][0]} ({top3[2][1]*100:.1f}%)")
                 
-                # Safe function to get information from CSVs
+                # Safe info retrieval
                 def get_info(df, column_name, default="Not available in dataset"):
                     for col in ['Disease', 'diseases', 'disease']:
                         if col in df.columns:
-                            match = df[df[col] == disease_name]
+                            match = df[df[col] == prediction]
                             if not match.empty:
                                 return match[column_name].values[0]
                     return default
                 
                 info = {
-                    "disease": disease_name,
+                    "disease": prediction,
                     "description": get_info(descriptions, "Description"),
                     "medications": get_info(medications, "Medication"),
                     "precautions": get_info(precautions, "Precaution_1"),
