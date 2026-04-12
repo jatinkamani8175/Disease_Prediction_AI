@@ -137,17 +137,17 @@ else:
                 # Get numeric prediction
                 pred_index = model.predict([input_vec])[0]
                 
-                # === IMPORTANT FIX: Convert number to actual disease name ===
+                # FIX: Convert number → actual disease name
                 disease_name = model.classes_[pred_index]
                 
-                # Get probabilities for Top 3
+                # Top 3 predictions with confidence
                 proba = model.predict_proba([input_vec])[0]
                 top3 = sorted(zip(model.classes_, proba), key=lambda x: x[1], reverse=True)[:3]
                 
                 st.info(f"**Top 3 Predictions:** {top3[0][0]} ({top3[0][1]*100:.1f}%), "
                         f"{top3[1][0]} ({top3[1][1]*100:.1f}%), {top3[2][0]} ({top3[2][1]*100:.1f}%)")
                 
-                # Safe info retrieval function
+                # Safe info retrieval (handles both 'Disease' and 'diseases')
                 def get_info(df, column_name, default="Not available in dataset"):
                     for col in ['Disease', 'diseases', 'disease']:
                         if col in df.columns:
