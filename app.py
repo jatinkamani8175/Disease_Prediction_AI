@@ -23,7 +23,7 @@ def load_model():
 
 pipeline = load_model()
 
-# ====================== LOAD EXTRA DATA ======================
+# ====================== LOAD DATA ======================
 @st.cache_data
 def load_data():
     base_dir = Path(__file__).parent.absolute()
@@ -114,24 +114,45 @@ if not st.session_state.logged_in:
 
 else:
     st.subheader("Select Your Symptoms")
-    
-    # Text input for symptoms (since your model uses text)
-    user_symptoms = st.text_area(
-        "Describe your symptoms (comma separated or in sentence)",
-        placeholder="e.g. shortness of breath, chest tightness, palpitations, anxiety",
-        height=100
+
+    # Suggested Symptoms - Multi-select with nice UI
+    common_symptoms = [
+        "shortness of breath", "chest tightness", "palpitations", "irregular heartbeat",
+        "anxiety and nervousness", "depression", "dizziness", "insomnia", "cough",
+        "headache", "nausea", "vomiting", "fever", "fatigue", "back pain", "leg pain",
+        "abdominal pain", "eye redness", "skin rash", "itching", "joint pain"
+    ]
+
+    selected_symptoms = st.multiselect(
+        "Choose symptoms you are experiencing (Suggested + Custom)",
+        options=common_symptoms,
+        default=[],
+        help="You can select multiple symptoms"
     )
-    
+
+    # Allow custom symptoms
+    custom_symptoms = st.text_input(
+        "Or type additional symptoms (comma separated)",
+        placeholder="e.g. breathing fast, sore throat, loss of appetite"
+    )
+
+    # Combine selected and custom symptoms
+    all_symptoms = selected_symptoms.copy()
+    if custom_symptoms.strip():
+        all_symptoms.extend([s.strip() for s in custom_symptoms.split(",") if s.strip()])
+
+    user_input_text = ", ".join(all_symptoms)
+
     if st.button("🔮 Predict Disease", type="primary", use_container_width=True):
-        if not user_symptoms.strip():
-            st.warning("Please enter your symptoms")
+        if not all_symptoms:
+            st.warning("Please select or type at least one symptom")
         else:
             with st.spinner("Analyzing symptoms..."):
-                # Predict using the pipeline
-                prediction = pipeline.predict([user_symptoms])[0]
+                # Predict using your trained pipeline
+                prediction = pipeline.predict([user_input_text])[0]
                 
-                # Get probabilities for top 3
-                proba = pipeline.predict_proba([user_symptoms])[0]
+                # Top 3 predictions with confidence
+                proba = pipeline.predict_proba([user_input_text])[0]
                 top3 = sorted(zip(pipeline.classes_, proba), key=lambda x: x[1], reverse=True)[:3]
                 
                 st.info(f"**Top 3 Predictions:** {top3[0][0]} ({top3[0][1]*100:.1f}%), "
