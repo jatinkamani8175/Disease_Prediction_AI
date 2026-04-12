@@ -133,28 +133,34 @@ else:
         else:
             with st.spinner("Analyzing symptoms..."):
                 input_vec = [1 if sym in selected_symptoms else 0 for sym in symptoms_list]
-                prediction = model.predict([input_vec])[0]
                 
-                # Show top 3 predictions with confidence
+                # Get numeric prediction
+                pred_index = model.predict([input_vec])[0]
+                
+                # Convert numeric prediction to actual disease name
+                disease_name = model.classes_[pred_index]
+                
+                # Get probabilities
                 proba = model.predict_proba([input_vec])[0]
                 top3 = sorted(zip(model.classes_, proba), key=lambda x: x[1], reverse=True)[:3]
+                
                 st.info(f"**Top 3 Predictions:** {top3[0][0]} ({top3[0][1]*100:.1f}%), "
                         f"{top3[1][0]} ({top3[1][1]*100:.1f}%), {top3[2][0]} ({top3[2][1]*100:.1f}%)")
                 
-                # Safe info retrieval (handles both 'Disease' and 'diseases')
+                # Safe info retrieval
                 def get_info(df, column_name, default="Not available in dataset"):
                     for col in ['Disease', 'diseases', 'disease']:
                         if col in df.columns:
-                            match = df[df[col] == prediction]
+                            match = df[df[col] == disease_name]
                             if not match.empty:
                                 return match[column_name].values[0]
                     return default
                 
                 info = {
-                    "disease": prediction,
+                    "disease": disease_name,
                     "description": get_info(descriptions, "Description"),
                     "medications": get_info(medications, "Medication"),
-                    "precautions": get_info(precautions, "Precaution_1"),   # or combine all precaution columns if needed
+                    "precautions": get_info(precautions, "Precaution_1"),
                     "diets": get_info(diets, "Diet"),
                     "workouts": get_info(workouts, "Workouts")
                 }
