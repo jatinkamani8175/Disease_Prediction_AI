@@ -134,20 +134,20 @@ else:
             with st.spinner("Analyzing symptoms..."):
                 input_vec = [1 if sym in selected_symptoms else 0 for sym in symptoms_list]
                 
-                # Get numeric prediction
+                # Get the numeric prediction
                 pred_index = model.predict([input_vec])[0]
                 
-                # FIX: Convert number → actual disease name
+                # CRITICAL FIX: Convert number to actual disease name
                 disease_name = model.classes_[pred_index]
                 
-                # Top 3 predictions with confidence
+                # Top 3 predictions
                 proba = model.predict_proba([input_vec])[0]
                 top3 = sorted(zip(model.classes_, proba), key=lambda x: x[1], reverse=True)[:3]
                 
                 st.info(f"**Top 3 Predictions:** {top3[0][0]} ({top3[0][1]*100:.1f}%), "
                         f"{top3[1][0]} ({top3[1][1]*100:.1f}%), {top3[2][0]} ({top3[2][1]*100:.1f}%)")
                 
-                # Safe info retrieval (handles both 'Disease' and 'diseases')
+                # Safe function to get information from CSVs
                 def get_info(df, column_name, default="Not available in dataset"):
                     for col in ['Disease', 'diseases', 'disease']:
                         if col in df.columns:
